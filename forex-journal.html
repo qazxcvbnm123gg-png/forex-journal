@@ -19,10 +19,12 @@
 <script type="text/babel">
 const { useState, useMemo, useEffect, useRef } = React;
 
-const PAIRS = ["EUR/USD","GBP/USD","USD/JPY","USD/CHF","AUD/USD","USD/CAD","NZD/USD","EUR/GBP","EUR/JPY","GBP/JPY","XAU/USD","อื่นๆ"];
+const PAIRS = ["EUR/USD","GBP/USD","USD/JPY","USD/CHF","AUD/USD","USD/CAD","NZD/USD","EUR/GBP","EUR/JPY","GBP/JPY","XAU/USD","BTC/USD","US100","อื่นๆ"];
 const SESSIONS = ["London","New York","Tokyo","Sydney","Overlap"];
 const DIRECTIONS = ["Buy","Sell"];
 const FIELDS = ["date","pair","direction","session","entry","exit","sl","tp","lots","pnl","note"];
+const DAYS_TH = ["อา","จ","อ","พ","พฤ","ศ","ส"];
+const MONTHS_TH = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
 
 const initialForm = {
   date: new Date().toISOString().split("T")[0],
@@ -46,6 +48,98 @@ function Badge({ children, color }) {
   return <span style={{ background:c.bg, color:c.text, borderRadius:5, padding:"2px 8px", fontSize:12, fontWeight:600 }}>{children}</span>;
 }
 
+function CalendarView({ trades }) {
+  const today = new Date();
+  const [year, setYear] = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth());
+
+  const prevMonth = () => { if(month===0){setMonth(11);setYear(y=>y-1);}else setMonth(m=>m-1); };
+  const nextMonth = () => { if(month===11){setMonth(0);setYear(y=>y+1);}else setMonth(m=>m+1); };
+
+  const dayMap = useMemo(() => {
+    const map = {};
+    trades.forEach(t => {
+      if(!t.date || t.pnl==="") return;
+      const d = t.date;
+      if(!map[d]) map[d] = { pnl:0, wins:0, total:0 };
+      map[d].pnl += parseFloat(t.pnl||0);
+      map[d].total++;
+      if(parseFloat(t.pnl) > 0) map[d].wins++;
+    });
+    return map;
+  }, [trades]);
+
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const cells = [];
+  for(let i=0; i<firstDay; i++) cells.push(null);
+  for(let d=1; d<=daysInMonth; d++) cells.push(d);
+
+  const fmt = d => {
+    const mm = String(month+1).padStart(2,"0");
+    const dd = String(d).padStart(2,"0");
+    return `${year}-${mm}-${dd}`;
+  };
+
+  const todayStr = today.toISOString().split("T")[0];
+
+  return (
+    <div style={{ background:"#0d1117", border:"1px solid #21262d", borderRadius:12, padding:16, marginBottom:16 }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+        <button onClick={prevMonth} style={{ background:"#21262d", border:"none", color:"#e6edf3", borderRadius:8, padding:"6px 16px", cursor:"pointer", fontSize:18 }}>‹</button>
+        <div style={{ fontWeight:700, fontSize:16 }}>{MONTHS_TH[month]} {year + 543}</div>
+        <button onClick={nextMonth} style={{ background:"#21262d", border:"none", color:"#e6edf3", borderRadius:8, padding:"6px 16px", cursor:"pointer", fontSize:18 }}>›</button>
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:4, marginBottom:4 }}>
+        {DAYS_TH.map(d => (
+          <div key={d} style={{ textAlign:"center", color:"#8b949e", fontSize:12, padding:"4px 0", fontWeight:600 }}>{d}</div>
+        ))}
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:4 }}>
+        {cells.map((d, i) => {
+          if(!d) return <div key={"e"+i} style={{ minHeight:64 }}/>;
+          const key = fmt(d);
+          const data = dayMap[key];
+          const isToday = key === todayStr;
+          const hasTrade = data && data.total > 0;
+          const profit = hasTrade ? data.pnl : null;
+          const winRate = hasTrade ? Math.round((data.wins/data.total)*100) : null;
+          const bgColor = hasTrade ? (profit>=0 ? "rgba(63,185,80,0.15)" : "rgba(248,81,73,0.15)") : "#0d1117";
+          const borderColor = isToday ? "#f78166" : hasTrade ? (profit>=0?"#3fb950":"#f85149") : "#21262d";
+          return (
+            <div key={key} style={{ background:bgColor, border:`1px solid ${borderColor}`, borderRadius:8, padding:"6px 4px", minHeight:64, textAlign:"center" }}>
+              <div style={{ fontSize:13, fontWeight:isToday?700:400, color:isToday?"#f78166":"#e6edf3", marginBottom:4 }}>{d}</div>
+              {hasTrade && <>
+                <div style={{ fontSize:11, fontWeight:700, color:profit>=0?"#3fb950":"#f85149", lineHeight:1.3 }}>
+                  {profit>=0?"+":""}{profit.toFixed(0)}$
+                </div>
+                <div style={{ fontSize:10, color:"#8b949e", marginTop:2 }}>{winRate}%</div>
+              </>}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ display:"flex", gap:16, marginTop:12, justifyContent:"center" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <div style={{ width:10, height:10, background:"rgba(63,185,80,0.3)", border:"1px solid #3fb950", borderRadius:3 }}/>
+          <span style={{ color:"#8b949e", fontSize:11 }}>กำไร</span>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <div style={{ width:10, height:10, background:"rgba(248,81,73,0.3)", border:"1px solid #f85149", borderRadius:3 }}/>
+          <span style={{ color:"#8b949e", fontSize:11 }}>ขาดทุน</span>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <div style={{ width:10, height:10, background:"#0d1117", border:"1px solid #f78166", borderRadius:3 }}/>
+          <span style={{ color:"#8b949e", fontSize:11 }}>วันนี้</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [trades, setTrades] = useState(() => {
     try { return JSON.parse(localStorage.getItem("forex_trades") || "[]"); } catch { return []; }
@@ -58,13 +152,10 @@ function App() {
   const [toast, setToast] = useState("");
   const importRef = useRef();
 
-  useEffect(() => {
-    localStorage.setItem("forex_trades", JSON.stringify(trades));
-  }, [trades]);
+  useEffect(() => { localStorage.setItem("forex_trades", JSON.stringify(trades)); }, [trades]);
 
   const showToast = msg => { setToast(msg); setTimeout(() => setToast(""), 3000); };
 
-  // Export CSV
   const exportCSV = () => {
     const header = FIELDS.join(",");
     const rows = trades.map(t => FIELDS.map(f => `"${(t[f]||"").toString().replace(/"/g,'""')}"`).join(","));
@@ -77,10 +168,8 @@ function App() {
     showToast("✅ Export สำเร็จ!");
   };
 
-  // Import CSV
   const importCSV = e => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = ev => {
       try {
@@ -92,14 +181,13 @@ function App() {
           headers.forEach((h,i) => { obj[h.trim()] = vals[i] || ""; });
           return obj;
         });
-        if (confirm(`พบ ${imported.length} เทรด ต้องการนำเข้าข้อมูลทั้งหมดไหม?\n(ข้อมูลเดิมจะยังอยู่)`)) {
+        if (confirm(`พบ ${imported.length} เทรด นำเข้าไหม?`)) {
           setTrades(ts => [...imported, ...ts]);
           showToast(`✅ Import ${imported.length} เทรดสำเร็จ!`);
         }
       } catch { showToast("❌ ไฟล์ไม่ถูกต้อง"); }
     };
-    reader.readAsText(file, "utf-8");
-    e.target.value = "";
+    reader.readAsText(file, "utf-8"); e.target.value = "";
   };
 
   const filtered = useMemo(() => filterPair === "ทั้งหมด" ? trades : trades.filter(t => t.pair === filterPair), [trades, filterPair]);
@@ -118,44 +206,32 @@ function App() {
   }, [filtered]);
 
   const handleChange = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
-
   const handleSubmit = () => {
     if (!form.date || !form.pair) return;
     if (editId !== null) { setTrades(ts => ts.map(t => t.id===editId ? {...form,id:editId} : t)); setEditId(null); }
     else setTrades(ts => [{ ...form, id:Date.now() }, ...ts]);
-    setForm(initialForm); setShowForm(false);
-    showToast("✅ บันทึกเทรดแล้ว!");
+    setForm(initialForm); setShowForm(false); showToast("✅ บันทึกเทรดแล้ว!");
   };
-
   const handleEdit = trade => { setForm({...trade}); setEditId(trade.id); setShowForm(true); setTab("journal"); };
   const handleDelete = id => { if(confirm("ลบเทรดนี้?")) { setTrades(ts => ts.filter(t => t.id !== id)); showToast("🗑 ลบแล้ว"); } };
   const pnlColor = v => parseFloat(v) > 0 ? "#3fb950" : parseFloat(v) < 0 ? "#f85149" : "#8b949e";
   const usedPairs = ["ทั้งหมด", ...Array.from(new Set(trades.map(t => t.pair)))];
-
-  const equityCurve = useMemo(() => {
-    let cum = 0;
-    return filtered.filter(t => t.pnl !== "").map((t,i) => { cum += parseFloat(t.pnl||0); return { i:i+1, v:cum }; });
-  }, [filtered]);
-
+  const equityCurve = useMemo(() => { let cum=0; return filtered.filter(t=>t.pnl!=="").map((t,i)=>{ cum+=parseFloat(t.pnl||0); return {i:i+1,v:cum}; }); }, [filtered]);
   const maxV = Math.max(...equityCurve.map(p=>p.v), 1);
   const minV = Math.min(...equityCurve.map(p=>p.v), 0);
-
   const INPUT = { background:"#0d1117", border:"1px solid #30363d", borderRadius:7, color:"#e6edf3", padding:"9px 12px", fontSize:13, width:"100%", outline:"none", boxSizing:"border-box" };
   const BTN = { border:"none", borderRadius:8, color:"#fff", padding:"8px 14px", fontSize:12, fontWeight:600, cursor:"pointer" };
 
   return (
     <div style={{ minHeight:"100vh", background:"#010409", color:"#e6edf3", fontFamily:"'Inter',system-ui,sans-serif", paddingBottom:60 }}>
+      {toast && <div style={{ position:"fixed", bottom:24, left:"50%", transform:"translateX(-50%)", background:"#238636", color:"#fff", padding:"10px 20px", borderRadius:8, fontSize:13, fontWeight:600, zIndex:99 }}>{toast}</div>}
 
-      {/* Toast */}
-      {toast && <div style={{ position:"fixed", bottom:24, left:"50%", transform:"translateX(-50%)", background:"#238636", color:"#fff", padding:"10px 20px", borderRadius:8, fontSize:13, fontWeight:600, zIndex:99, boxShadow:"0 4px 12px #0008" }}>{toast}</div>}
-
-      {/* Header */}
       <div style={{ borderBottom:"1px solid #21262d", padding:"18px 24px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, background:"#010409", zIndex:10 }}>
         <div>
           <div style={{ fontWeight:700, fontSize:18 }}>📈 Forex Journal</div>
           <div style={{ color:"#8b949e", fontSize:12, marginTop:2 }}>{trades.length} เทรดทั้งหมด</div>
         </div>
-        <div style={{ display:"flex", gap:8 }}>
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
           <button onClick={exportCSV} style={{ ...BTN, background:"#1f3a5f" }}>📤 Export</button>
           <button onClick={() => importRef.current.click()} style={{ ...BTN, background:"#2d2a1e" }}>📥 Import</button>
           <input ref={importRef} type="file" accept=".csv" onChange={importCSV} style={{ display:"none" }}/>
@@ -165,7 +241,6 @@ function App() {
         </div>
       </div>
 
-      {/* Form */}
       {showForm && (
         <div style={{ background:"#0d1117", borderBottom:"1px solid #21262d", padding:"20px 24px" }}>
           <div style={{ fontWeight:600, marginBottom:16 }}>{editId ? "✏️ แก้ไขเทรด" : "➕ เพิ่มเทรดใหม่"}</div>
@@ -200,21 +275,22 @@ function App() {
         </div>
       )}
 
-      {/* Tabs */}
       <div style={{ display:"flex", borderBottom:"1px solid #21262d", padding:"0 24px" }}>
-        {["journal","stats"].map(t => (
+        {["journal","calendar","stats"].map(t => (
           <button key={t} onClick={()=>setTab(t)} style={{ background:"none", border:"none", padding:"14px 16px 12px", color:tab===t?"#e6edf3":"#8b949e", borderBottom:tab===t?"2px solid #f78166":"2px solid transparent", fontWeight:tab===t?600:400, cursor:"pointer", fontSize:14 }}>
-            {t==="journal"?"📋 Journal":"📊 สถิติ"}
+            {t==="journal"?"📋 Journal":t==="calendar"?"📅 ปฏิทิน":"📊 สถิติ"}
           </button>
         ))}
       </div>
 
       <div style={{ padding:"20px 24px" }}>
-        <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
-          {usedPairs.map(p => (
-            <button key={p} onClick={()=>setFilterPair(p)} style={{ background:filterPair===p?"#21262d":"none", border:`1px solid ${filterPair===p?"#f78166":"#30363d"}`, borderRadius:20, color:filterPair===p?"#f78166":"#8b949e", padding:"4px 12px", fontSize:12, cursor:"pointer" }}>{p}</button>
-          ))}
-        </div>
+        {tab !== "calendar" && (
+          <div style={{ display:"flex", gap:8, marginBottom:16, flexWrap:"wrap" }}>
+            {usedPairs.map(p => (
+              <button key={p} onClick={()=>setFilterPair(p)} style={{ background:filterPair===p?"#21262d":"none", border:`1px solid ${filterPair===p?"#f78166":"#30363d"}`, borderRadius:20, color:filterPair===p?"#f78166":"#8b949e", padding:"4px 12px", fontSize:12, cursor:"pointer" }}>{p}</button>
+            ))}
+          </div>
+        )}
 
         {tab==="journal" && (
           filtered.length===0
@@ -250,6 +326,8 @@ function App() {
               </div>
         )}
 
+        {tab==="calendar" && <CalendarView trades={trades} />}
+
         {tab==="stats" && (
           <div>
             <div style={{ display:"flex", flexWrap:"wrap", gap:10, marginBottom:20 }}>
@@ -261,7 +339,6 @@ function App() {
               <StatCard label="Risk/Reward" value={stats.rr.toFixed(2)} color={stats.rr>=1?"#3fb950":"#f78166"} sub="Avg W / Avg L"/>
               <StatCard label="Max Drawdown" value={`-${stats.maxDD.toFixed(2)}$`} color="#f78166"/>
             </div>
-
             {equityCurve.length > 1 && (
               <div style={{ background:"#0d1117", border:"1px solid #21262d", borderRadius:10, padding:16, marginBottom:16 }}>
                 <div style={{ color:"#8b949e", fontSize:12, marginBottom:12, textTransform:"uppercase" }}>Equity Curve</div>
@@ -270,7 +347,6 @@ function App() {
                 </svg>
               </div>
             )}
-
             <div style={{ background:"#0d1117", border:"1px solid #21262d", borderRadius:10, padding:16 }}>
               <div style={{ color:"#8b949e", fontSize:12, marginBottom:12, textTransform:"uppercase" }}>P&L by คู่เงิน</div>
               {Array.from(new Set(filtered.map(t=>t.pair))).map(pair => {
