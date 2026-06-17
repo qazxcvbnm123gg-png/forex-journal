@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📈 Forex Journal</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #010409; color: #e6edf3; font-family: 'Inter', system-ui, sans-serif; }
+  ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #0d1117; } ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+  select option { background: #0d1117; color: #e6edf3; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useEffect, useRef } = React;
+
+// ===== ตั้งค่า Supabase =====
+const SUPABASE_URL = "https://innmefknxrtdderkufjt.supabase.co";
+const SUPABASE_KEY = "sb_publishable_mT2B3LscOG6_H7UPeWn0ww_RHsgUSib";
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const PAIRS = ["EUR/USD","GBP/USD","USD/JPY","USD/CHF","AUD/USD","USD/CAD","NZD/USD","EUR/GBP","EUR/JPY","GBP/JPY","XAU/USD","BTC/USD","US100","อื่นๆ"];
+const SESSIONS = ["London","New York","Tokyo","Sydney","Overlap"];
+const DIRECTIONS = ["Buy","Sell"];
+
+const initialForm = {
+  date: new Date().toISOString().split("T")[0],
+  pair:"EUR/USD", direction:"Buy", session:"London",
+  entry:"", exit:"", sl:"", tp:"", lots:"", pnl:"", note:"",
+};
+
+function StatCard({ label, value, sub, color }) {
+  return (
+    <div style={{ background:"#0d1117", border:"1px solid #21262d", borderRadius:10, padding:"18px 20px", flex:1, minWidth:140 }}>
+      <div style={{ color:"#8b949e", fontSize:11, letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:6 }}>{label}</div>
+      <div style={{ color:color||"#e6edf3", fontSize:24, fontWeight:700, fontFamily:"monospace" }}>{value}</div>
+      {sub && <div style={{ color:"#8b949e", fontSize:12, marginTop:4 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function Badge({ children, color }) {
+  const colors = { buy:{bg:"#0d2a1e",text:"#3fb950"}, sell:{bg:"#2d1016",text:"#f85149"} };
+  const c = colors[color] || { bg:"#21262d", text:"#8b949e" };
+  return <span style={{ background:c.bg, color:c.text, borderRadius:5, padding:"2px 8px", fontSize:12, fontWeight:600 }}>{children}</span>;
+}
+
+// ===== หน้า Login / Signup =====
+function AuthScreen({ onAuthed }) {
+  const [mode, setMode] = useState("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [msg, setMsg] = useState("");
+
+  const INPUT = { background:"#0d1117", border:"1px solid #30363d", borderRadius:8, color:"#e6edf3", padding:"12px 14px", fontSize:14, width:"100%", outline:"none", marginBottom:12 };
+
+  const handleSubmit = async () => {
+    setError(""); setMsg(""); setLoading(true);
+    try {
+      if(mode==="login"){
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if(error) throw error;
+        onAuthed(data.session);
+      } else {
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        if(error) throw error;
+        if(data.session) onAuthed(data.session);
+        else setMsg("✅ สมัครสำเร็จ! กรุณาเข้าสู่ระบบ");
+        setMode("login");
+      }
+    } catch(err) {
+      setError(err.message.includes("Invalid login") ? "อีเมลหรือรหัสผ่านไม่ถูกต้อง" : err.message.includes("already registered") ? "อีเมลนี้ถูกใช้แล้ว" : err.message);
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"#010409", padding:20 }}>
+      <div style={{ background:"#0d1117", border:"1px solid #21262d", borderRadius:14, padding:32, width:"100%", maxWidth:380 }}>
+        <div style={{ textAlign:"center", marginBottom:24 }}>
+          <div style={{ fontSize:32, marginBottom:8 }}>📈</div>
+          <div style={{ fontWeight:700, fontSize:20 }}>Forex Journal</div>
+          <div style={{ color:"#8b949e", fontSize:13, marginTop:4 }}>{mode==="login"?"เข้าสู่ระบบเพื่อใช้งาน":"สร้างบัญชีใหม่"}</div>
+        </div>
+
+        <div style={{ color:"#8b949e", fontSize:12, marginBottom:6 }}>อีเมล</div>
+        <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" style={INPUT}/>
+
+        <div style={{ color:"#8b949e", fontSize:12, marginBottom:6 }}>รหัสผ่าน</div>
+        <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="อย่างน้อย 6 ตัวอักษร" style={INPUT}/>
+
+        {error && <div style={{ background:"#2d1016", border:"1px solid #f85149", color:"#f85149", borderRadius:8, padding:"8px 12px", fontSize:12, marginBottom:12 }}>{error}</div>}
+        {msg && <div style={{ background:"#0d2a1e", border:"1px solid #3fb950", color:"#3fb950", borderRadius:8, padding:"8px 12px", fontSize:12, marginBottom:12 }}>{msg}</div>}
+
+        <button onClick={handleSubmit} disabled={loading||!email||!password} style={{ width:"100%", background:loading?"#21262d":"#238636", border:"none", borderRadius:8, color:"#fff", padding:"12px 0", fontSize:14, fontWeight:600, cursor:loading?"default":"pointer", marginTop:4 }}>
+          {loading?"กำลังโหลด...":mode==="login"?"เข้าสู่ระบบ":"สมัครสมาชิก"}
+        </button>
+
+        <div style={{ textAlign:"center", marginTop:18, fontSize:13 }}>
+          <span style={{ color:"#8b949e" }}>{mode==="login"?"ยังไม่มีบัญชี? ":"มีบัญชีแล้ว? "}</span>
+          <span onClick={()=>{setMode(mode==="login"?"signup":"login");setError("");setMsg("");}} style={{ color:"#f78166", cursor:"pointer", fontWeight:600 }}>
+            {mode==="login"?"สมัครสมาชิก":"เข้าสู่ระบบ"}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===== แอปหลัก =====
+function MainApp({ session, onLogout }) {
+  const [trades, setTrades] = useState([]);
+  const [loadingTrades, setLoadingTrades] = useState(true);
+  const [form, setForm] = useState(initialForm);
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [filterPair, setFilterPair] = useState("ทั้งหมด");
+  const [tab, setTab] = useState("journal");
+  const [toast, setToast] = useState("");
+
+  const userId = session.user.id;
+  const showToast = msg => { setToast(msg); setTimeout(()=>setToast(""),3000); };
+
+  // โหลดข้อมูลจาก Supabase
+  const loadTrades = async () => {
+    setLoadingTrades(true);
+    const { data, error } = await supabase.from("trades").select("*").eq("user_id", userId).order("date", {ascending:false});
+    if(!error) setTrades(data || []);
+    setLoadingTrades(false);
+  };
+
+  useEffect(() => { loadTrades(); }, []);
+
+  const filtered = useMemo(()=>filterPair==="ทั้งหมด"?trades:trades.filter(t=>t.pair===filterPair),[trades,filterPair]);
+
+  const stats = useMemo(()=>{
+    const closed=filtered.filter(t=>t.pnl!=="" && t.pnl!=null);
+    const wins=closed.filter(t=>parseFloat(t.pnl)>0);
+    const losses=closed.filter(t=>parseFloat(t.pnl)<0);
+    const totalPnl=closed.reduce((s,t)=>s+parseFloat(t.pnl||0),0);
+    const winRate=closed.length>0?(wins.length/closed.length)*100:0;
+    const avgWin=wins.length>0?wins.reduce((s,t)=>s+parseFloat(t.pnl),0)/wins.length:0;
+    const avgLoss=losses.length>0?Math.abs(losses.reduce((s,t)=>s+parseFloat(t.pnl),0)/losses.length):0;
+    const rr=avgLoss>0?avgWin/avgLoss:0;
+    const maxDD=(()=>{let peak=0,dd=0,cum=0;closed.forEach(t=>{cum+=parseFloat(t.pnl);if(cum>peak)peak=cum;if(peak-cum>dd)dd=peak-cum;});return dd;})();
+    return {total:closed.length,wins:wins.length,losses:losses.length,totalPnl,winRate,avgWin,avgLoss,rr,maxDD};
+  },[filtered]);
+
+  const handleChange = e=>setForm(f=>({...f,[e.target.name]:e.target.value}));
+
+  const handleSubmit = async () => {
+    if(!form.date||!form.pair) return;
+    const payload = { ...form, user_id: userId, pnl: form.pnl===""?null:form.pnl };
+    if(editId!==null){
+      const { error } = await supabase.from("trades").update(payload).eq("id", editId);
+      if(!error){ showToast("✅ บันทึกการแก้ไขแล้ว!"); loadTrades(); }
+      setEditId(null);
+    } else {
+      const { error } = await supabase.from("trades").insert(payload);
+      if(!error){ showToast("✅ บันทึกเทรดแล้ว!"); loadTrades(); }
+    }
+    setForm(initialForm); setShowForm(false);
+  };
+
+  const handleEdit = trade=>{ setForm({...trade, pnl: trade.pnl ?? ""}); setEditId(trade.id); setShowForm(true); setTab("journal"); };
+  const handleDelete = async id=>{
+    if(confirm("ลบเทรดนี้?")){
+      const { error } = await supabase.from("trades").delete().eq("id", id);
+      if(!error){ showToast("🗑 ลบแล้ว"); loadTrades(); }
+    }
+  };
+
+  const pnlColor=v=>parseFloat(v)>0?"#3fb950":parseFloat(v)<0?"#f85149":"#8b949e";
+  const usedPairs=["ทั้งหมด",...Array.from(new Set(trades.map(t=>t.pair)))];
+  const equityCurve=useMemo(()=>{let cum=0;return filtered.filter(t=>t.pnl!=null&&t.pnl!=="").map((t,i)=>{cum+=parseFloat(t.pnl||0);return{i:i+1,v:cum};});},[filtered]);
+  const maxV=Math.max(...equityCurve.map(p=>p.v),1);
+  const minV=Math.min(...equityCurve.map(p=>p.v),0);
+  const INPUT={background:"#0d1117",border:"1px solid #30363d",borderRadius:7,color:"#e6edf3",padding:"9px 12px",fontSize:13,width:"100%",outline:"none",boxSizing:"border-box"};
+  const BTN={border:"none",borderRadius:8,color:"#fff",padding:"8px 14px",fontSize:12,fontWeight:600,cursor:"pointer"};
+
+  return (
+    <div style={{ minHeight:"100vh", background:"#010409", color:"#e6edf3", fontFamily:"'Inter',system-ui,sans-serif", paddingBottom:60 }}>
+      {toast&&<div style={{ position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#238636",color:"#fff",padding:"10px 20px",borderRadius:8,fontSize:13,fontWeight:600,zIndex:99 }}>{toast}</div>}
+
+      <div style={{ borderBottom:"1px solid #21262d",padding:"18px 24px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,background:"#010409",zIndex:10 }}>
+        <div>
+          <div style={{ fontWeight:700,fontSize:18 }}>📈 Forex Journal</div>
+          <div style={{ color:"#8b949e",fontSize:12,marginTop:2 }}>{session.user.email}</div>
+        </div>
+        <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
+          <button onClick={()=>{setShowForm(s=>!s);setEditId(null);setForm(initialForm);}} style={{ ...BTN,background:showForm?"#21262d":"#238636",fontSize:13 }}>
+            {showForm?"✕":"+ บันทึก"}
+          </button>
+          <button onClick={onLogout} style={{ ...BTN,background:"#2d1016",color:"#f85149" }}>ออกจากระบบ</button>
+        </div>
+      </div>
+
+      {showForm&&(
+        <div style={{ background:"#0d1117",borderBottom:"1px solid #21262d",padding:"20px 24px" }}>
+          <div style={{ fontWeight:600,marginBottom:16 }}>{editId?"✏️ แก้ไขเทรด":"➕ เพิ่มเทรดใหม่"}</div>
+          <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10 }}>
+            {[
+              {label:"วันที่",name:"date",type:"date"},
+              {label:"คู่เงิน",name:"pair",type:"select",options:PAIRS},
+              {label:"ทิศทาง",name:"direction",type:"select",options:DIRECTIONS},
+              {label:"Session",name:"session",type:"select",options:SESSIONS},
+              {label:"Entry",name:"entry",type:"number",placeholder:"1.08500"},
+              {label:"Exit",name:"exit",type:"number",placeholder:"1.09000"},
+              {label:"Stop Loss",name:"sl",type:"number",placeholder:"1.08200"},
+              {label:"Take Profit",name:"tp",type:"number",placeholder:"1.09500"},
+              {label:"Lot Size",name:"lots",type:"number",placeholder:"0.10"},
+              {label:"P&L ($)",name:"pnl",type:"number",placeholder:"+50 หรือ -25"},
+            ].map(f=>(
+              <div key={f.name}>
+                <div style={{ color:"#8b949e",fontSize:11,marginBottom:4 }}>{f.label}</div>
+                {f.type==="select"
+                  ?<select name={f.name} value={form[f.name]} onChange={handleChange} style={INPUT}>{f.options.map(o=><option key={o}>{o}</option>)}</select>
+                  :<input name={f.name} type={f.type} value={form[f.name]} onChange={handleChange} placeholder={f.placeholder} style={INPUT}/>}
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop:10 }}>
+            <div style={{ color:"#8b949e",fontSize:11,marginBottom:4 }}>โน้ต</div>
+            <textarea name="note" value={form.note} onChange={handleChange} placeholder="ความคิดเห็น, เหตุผล, บทเรียน..." style={{ ...INPUT,height:60,resize:"vertical" }}/>
+          </div>
+          <button onClick={handleSubmit} style={{ marginTop:12,background:"#238636",border:"none",borderRadius:8,color:"#fff",padding:"10px 24px",fontSize:13,fontWeight:600,cursor:"pointer" }}>
+            {editId?"บันทึกการแก้ไข":"เพิ่มเทรด"}
+          </button>
+        </div>
+      )}
+
+      <div style={{ display:"flex",borderBottom:"1px solid #21262d",padding:"0 24px" }}>
+        {["journal","stats"].map(t=>(
+          <button key={t} onClick={()=>setTab(t)} style={{ background:"none",border:"none",padding:"14px 16px 12px",color:tab===t?"#e6edf3":"#8b949e",borderBottom:tab===t?"2px solid #f78166":"2px solid transparent",fontWeight:tab===t?600:400,cursor:"pointer",fontSize:14 }}>
+            {t==="journal"?"📋 Journal":"📊 สถิติ"}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ padding:"20px 24px" }}>
+        <div style={{ display:"flex",gap:8,marginBottom:16,flexWrap:"wrap" }}>
+          {usedPairs.map(p=>(
+            <button key={p} onClick={()=>setFilterPair(p)} style={{ background:filterPair===p?"#21262d":"none",border:`1px solid ${filterPair===p?"#f78166":"#30363d"}`,borderRadius:20,color:filterPair===p?"#f78166":"#8b949e",padding:"4px 12px",fontSize:12,cursor:"pointer" }}>{p}</button>
+          ))}
+        </div>
+
+        {loadingTrades ? (
+          <div style={{ textAlign:"center", color:"#8b949e", padding:"60px 0" }}>กำลังโหลดข้อมูล...</div>
+        ) : tab==="journal"&&(
+          filtered.length===0
+            ?<div style={{ textAlign:"center",color:"#8b949e",padding:"60px 0" }}><div style={{ fontSize:40,marginBottom:12 }}>📒</div><div style={{ fontSize:16 }}>ยังไม่มีเทรด</div><div style={{ fontSize:13,marginTop:6 }}>กด "+ บันทึก" เพื่อเริ่มต้น</div></div>
+            :<div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+              {filtered.map(t=>(
+                <div key={t.id} style={{ background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:"14px 16px",display:"flex",flexWrap:"wrap",gap:12,alignItems:"flex-start" }}>
+                  <div style={{ minWidth:80 }}>
+                    <div style={{ fontWeight:700,fontSize:15 }}>{t.pair}</div>
+                    <div style={{ color:"#8b949e",fontSize:12,marginTop:2 }}>{t.date}</div>
+                  </div>
+                  <div style={{ display:"flex",gap:6,alignItems:"center" }}>
+                    <Badge color={t.direction==="Buy"?"buy":"sell"}>{t.direction}</Badge>
+                    <span style={{ color:"#8b949e",fontSize:12 }}>{t.session}</span>
+                  </div>
+                  <div style={{ fontSize:12,color:"#8b949e",flex:1 }}>
+                    {t.entry&&<span>Entry: <b style={{ color:"#e6edf3" }}>{t.entry}</b></span>}
+                    {t.exit&&<span style={{ marginLeft:10 }}>Exit: <b style={{ color:"#e6edf3" }}>{t.exit}</b></span>}
+                    {t.lots&&<span style={{ marginLeft:10 }}>Lots: <b style={{ color:"#e6edf3" }}>{t.lots}</b></span>}
+                  </div>
+                  {t.pnl!=null&&t.pnl!==""&&<div style={{ fontWeight:700,fontSize:16,color:pnlColor(t.pnl) }}>{parseFloat(t.pnl)>0?"+":""}{parseFloat(t.pnl).toFixed(2)}$</div>}
+                  {t.note&&<div style={{ width:"100%",fontSize:12,color:"#8b949e",borderTop:"1px solid #21262d",paddingTop:8 }}>💬 {t.note}</div>}
+                  <div style={{ display:"flex",gap:6 }}>
+                    <button onClick={()=>handleEdit(t)} style={{ background:"#21262d",border:"none",borderRadius:6,color:"#8b949e",padding:"4px 10px",fontSize:12,cursor:"pointer" }}>✏️ แก้ไข</button>
+                    <button onClick={()=>handleDelete(t.id)} style={{ background:"#2d1016",border:"none",borderRadius:6,color:"#f85149",padding:"4px 10px",fontSize:12,cursor:"pointer" }}>🗑 ลบ</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+        )}
+
+        {!loadingTrades && tab==="stats"&&(
+          <div>
+            <div style={{ display:"flex",flexWrap:"wrap",gap:10,marginBottom:20 }}>
+              <StatCard label="รวมเทรด" value={stats.total}/>
+              <StatCard label="Win Rate" value={`${stats.winRate.toFixed(1)}%`} color={stats.winRate>=50?"#3fb950":"#f85149"} sub={`${stats.wins}W / ${stats.losses}L`}/>
+              <StatCard label="Total P&L" value={`${stats.totalPnl>=0?"+":""}${stats.totalPnl.toFixed(2)}$`} color={pnlColor(stats.totalPnl)}/>
+              <StatCard label="Avg Win" value={`+${stats.avgWin.toFixed(2)}$`} color="#3fb950"/>
+              <StatCard label="Avg Loss" value={`-${stats.avgLoss.toFixed(2)}$`} color="#f85149"/>
+              <StatCard label="Risk/Reward" value={stats.rr.toFixed(2)} color={stats.rr>=1?"#3fb950":"#f78166"} sub="Avg W / Avg L"/>
+              <StatCard label="Max Drawdown" value={`-${stats.maxDD.toFixed(2)}$`} color="#f78166"/>
+            </div>
+            {equityCurve.length>1&&(
+              <div style={{ background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:16,marginBottom:16 }}>
+                <div style={{ color:"#8b949e",fontSize:12,marginBottom:12,textTransform:"uppercase" }}>Equity Curve</div>
+                <svg width="100%" height="120" viewBox={`0 0 ${equityCurve.length} 120`} preserveAspectRatio="none">
+                  <polyline points={equityCurve.map((p,i)=>`${i},${120-((p.v-minV)/(maxV-minV||1))*100-10}`).join(" ")} fill="none" stroke="#3fb950" strokeWidth="1.5"/>
+                </svg>
+              </div>
+            )}
+            <div style={{ background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:16 }}>
+              <div style={{ color:"#8b949e",fontSize:12,marginBottom:12,textTransform:"uppercase" }}>P&L by คู่เงิน</div>
+              {Array.from(new Set(filtered.map(t=>t.pair))).map(pair=>{
+                const ts=filtered.filter(t=>t.pair===pair&&t.pnl!=null&&t.pnl!=="");
+                const sum=ts.reduce((s,t)=>s+parseFloat(t.pnl||0),0);
+                const w=ts.filter(t=>parseFloat(t.pnl)>0).length;
+                return (
+                  <div key={pair} style={{ display:"flex",alignItems:"center",gap:10,marginBottom:10 }}>
+                    <div style={{ width:80,fontSize:13,fontWeight:600 }}>{pair}</div>
+                    <div style={{ flex:1,background:"#21262d",borderRadius:4,height:8 }}>
+                      <div style={{ width:`${ts.length>0?(w/ts.length)*100:0}%`,background:"#3fb950",height:"100%",borderRadius:4 }}/>
+                    </div>
+                    <div style={{ width:50,fontSize:12,color:"#8b949e",textAlign:"center" }}>{ts.length>0?`${((w/ts.length)*100).toFixed(0)}%`:"-"}</div>
+                    <div style={{ width:70,textAlign:"right",fontWeight:600,fontSize:13,color:pnlColor(sum) }}>{sum>=0?"+":""}{sum.toFixed(2)}$</div>
+                  </div>
+                );
+              })}
+              {trades.length===0&&<div style={{ color:"#8b949e",textAlign:"center",padding:"20px 0" }}>เพิ่มเทรดก่อนเพื่อดูสถิติ</div>}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [session, setSession] = useState(null);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({data})=>{ setSession(data.session); setChecking(false); });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => setSession(session));
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  const handleLogout = async () => { await supabase.auth.signOut(); setSession(null); };
+
+  if(checking) return <div style={{ minHeight:"100vh", background:"#010409", color:"#8b949e", display:"flex", alignItems:"center", justifyContent:"center" }}>กำลังโหลด...</div>;
+
+  return session ? <MainApp session={session} onLogout={handleLogout}/> : <AuthScreen onAuthed={setSession}/>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
