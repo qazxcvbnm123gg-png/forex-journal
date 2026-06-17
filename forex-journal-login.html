@@ -20,7 +20,6 @@
 <script type="text/babel">
 const { useState, useMemo, useEffect, useRef } = React;
 
-// ===== ตั้งค่า Supabase =====
 const SUPABASE_URL = "https://innmefknxrtdderkufjt.supabase.co";
 const SUPABASE_KEY = "sb_publishable_mT2B3LscOG6_H7UPeWn0ww_RHsgUSib";
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -28,11 +27,13 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const PAIRS = ["EUR/USD","GBP/USD","USD/JPY","USD/CHF","AUD/USD","USD/CAD","NZD/USD","EUR/GBP","EUR/JPY","GBP/JPY","XAU/USD","BTC/USD","US100","อื่นๆ"];
 const SESSIONS = ["London","New York","Tokyo","Sydney","Overlap"];
 const DIRECTIONS = ["Buy","Sell"];
+const DAYS_TH = ["อา","จ","อ","พ","พฤ","ศ","ส"];
+const MONTHS_TH = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
 
 const initialForm = {
   date: new Date().toISOString().split("T")[0],
   pair:"EUR/USD", direction:"Buy", session:"London",
-  entry:"", exit:"", sl:"", tp:"", lots:"", pnl:"", note:"",
+  entry:"", exit:"", sl:"", tp:"", lots:"", pnl:"", note:"", image:"",
 };
 
 function StatCard({ label, value, sub, color }) {
@@ -51,7 +52,172 @@ function Badge({ children, color }) {
   return <span style={{ background:c.bg, color:c.text, borderRadius:5, padding:"2px 8px", fontSize:12, fontWeight:600 }}>{children}</span>;
 }
 
-// ===== หน้า Login / Signup =====
+function CalendarView({ trades }) {
+  const today = new Date();
+  const [year, setYear] = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth());
+  const prevMonth = () => { if(month===0){setMonth(11);setYear(y=>y-1);}else setMonth(m=>m-1); };
+  const nextMonth = () => { if(month===11){setMonth(0);setYear(y=>y+1);}else setMonth(m=>m+1); };
+  const dayMap = useMemo(() => {
+    const map = {};
+    trades.forEach(t => {
+      if(!t.date||t.pnl==null||t.pnl==="") return;
+      if(!map[t.date]) map[t.date]={pnl:0,wins:0,total:0};
+      map[t.date].pnl+=parseFloat(t.pnl||0);
+      map[t.date].total++;
+      if(parseFloat(t.pnl)>0) map[t.date].wins++;
+    });
+    return map;
+  }, [trades]);
+  const firstDay = new Date(year,month,1).getDay();
+  const daysInMonth = new Date(year,month+1,0).getDate();
+  const cells = [];
+  for(let i=0;i<firstDay;i++) cells.push(null);
+  for(let d=1;d<=daysInMonth;d++) cells.push(d);
+  const fmt = d => `${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+  const todayStr = today.toISOString().split("T")[0];
+  return (
+    <div style={{ background:"#0d1117", border:"1px solid #21262d", borderRadius:12, padding:16, marginBottom:16 }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+        <button onClick={prevMonth} style={{ background:"#21262d", border:"none", color:"#e6edf3", borderRadius:8, padding:"6px 16px", cursor:"pointer", fontSize:18 }}>‹</button>
+        <div style={{ fontWeight:700, fontSize:16 }}>{MONTHS_TH[month]} {year+543}</div>
+        <button onClick={nextMonth} style={{ background:"#21262d", border:"none", color:"#e6edf3", borderRadius:8, padding:"6px 16px", cursor:"pointer", fontSize:18 }}>›</button>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:4, marginBottom:4 }}>
+        {DAYS_TH.map(d=><div key={d} style={{ textAlign:"center", color:"#8b949e", fontSize:12, padding:"4px 0", fontWeight:600 }}>{d}</div>)}
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:4 }}>
+        {cells.map((d,i)=>{
+          if(!d) return <div key={"e"+i} style={{ minHeight:64 }}/>;
+          const key=fmt(d), data=dayMap[key], isToday=key===todayStr;
+          const hasTrade=data&&data.total>0;
+          const profit=hasTrade?data.pnl:null;
+          return (
+            <div key={key} style={{ background:hasTrade?(profit>=0?"rgba(63,185,80,0.15)":"rgba(248,81,73,0.15)"):"#0d1117", border:`1px solid ${isToday?"#f78166":hasTrade?(profit>=0?"#3fb950":"#f85149"):"#21262d"}`, borderRadius:8, padding:"6px 4px", minHeight:64, textAlign:"center" }}>
+              <div style={{ fontSize:13, fontWeight:isToday?700:400, color:isToday?"#f78166":"#e6edf3", marginBottom:4 }}>{d}</div>
+              {hasTrade&&<>
+                <div style={{ fontSize:11, fontWeight:700, color:profit>=0?"#3fb950":"#f85149" }}>{profit>=0?"+":""}{profit.toFixed(0)}$</div>
+                <div style={{ fontSize:10, color:"#8b949e", marginTop:2 }}>{Math.round((data.wins/data.total)*100)}%</div>
+              </>}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display:"flex", gap:16, marginTop:12, justifyContent:"center" }}>
+        {[["rgba(63,185,80,0.3)","#3fb950","กำไร"],["rgba(248,81,73,0.3)","#f85149","ขาดทุน"],["#0d1117","#f78166","วันนี้"]].map(([bg,bd,label])=>(
+          <div key={label} style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <div style={{ width:10, height:10, background:bg, border:`1px solid ${bd}`, borderRadius:3 }}/>
+            <span style={{ color:"#8b949e", fontSize:11 }}>{label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SessionStats({ trades }) {
+  const sessionData = useMemo(() => {
+    const map = {};
+    SESSIONS.forEach(s => { map[s]={wins:0,losses:0,pnl:0,total:0}; });
+    trades.forEach(t => {
+      if(!t.session||t.pnl==null||t.pnl==="") return;
+      const s=map[t.session];
+      if(!s) return;
+      s.total++; s.pnl+=parseFloat(t.pnl||0);
+      if(parseFloat(t.pnl)>0) s.wins++; else s.losses++;
+    });
+    return Object.entries(map).filter(([,v])=>v.total>0).sort((a,b)=>(b[1].wins/Math.max(b[1].total,1))-(a[1].wins/Math.max(a[1].total,1)));
+  }, [trades]);
+  if(sessionData.length===0) return <div style={{ color:"#8b949e", textAlign:"center", padding:"20px 0" }}>เพิ่มเทรดก่อนเพื่อดูสถิติ Session</div>;
+  const best = sessionData[0];
+  return (
+    <div style={{ background:"#0d1117", border:"1px solid #21262d", borderRadius:10, padding:16, marginBottom:16 }}>
+      <div style={{ color:"#8b949e", fontSize:12, marginBottom:12, textTransform:"uppercase" }}>📊 Session Performance</div>
+      {best && (
+        <div style={{ background:"rgba(63,185,80,0.1)", border:"1px solid #3fb950", borderRadius:8, padding:"10px 14px", marginBottom:12, display:"flex", alignItems:"center", gap:10 }}>
+          <span style={{ fontSize:18 }}>🏆</span>
+          <div>
+            <div style={{ color:"#3fb950", fontWeight:700, fontSize:14 }}>Best Session: {best[0]}</div>
+            <div style={{ color:"#8b949e", fontSize:12 }}>Win Rate {Math.round((best[1].wins/best[1].total)*100)}% · {best[1].total} เทรด</div>
+          </div>
+        </div>
+      )}
+      {sessionData.map(([session, d])=>{
+        const wr = d.total>0?Math.round((d.wins/d.total)*100):0;
+        return (
+          <div key={session} style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+            <div style={{ width:70, fontSize:13, fontWeight:600, color:"#e6edf3" }}>{session}</div>
+            <div style={{ flex:1, background:"#21262d", borderRadius:4, height:8 }}>
+              <div style={{ width:`${wr}%`, background:wr>=50?"#3fb950":"#f85149", height:"100%", borderRadius:4 }}/>
+            </div>
+            <div style={{ width:40, fontSize:12, color:wr>=50?"#3fb950":"#f85149", textAlign:"center", fontWeight:700 }}>{wr}%</div>
+            <div style={{ width:70, textAlign:"right", fontSize:12, color:d.pnl>=0?"#3fb950":"#f85149", fontWeight:600 }}>{d.pnl>=0?"+":""}{d.pnl.toFixed(0)}$</div>
+            <div style={{ width:50, textAlign:"right", fontSize:11, color:"#8b949e" }}>{d.wins}W/{d.losses}L</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PeriodStats({ trades }) {
+  const [mode, setMode] = useState("week");
+  const grouped = useMemo(() => {
+    const map = {};
+    trades.forEach(t => {
+      if(!t.date||t.pnl==null||t.pnl==="") return;
+      const d = new Date(t.date);
+      let key;
+      if(mode==="week") {
+        const day=d.getDay(), diff=d.getDate()-day+(day===0?-6:1);
+        const mon=new Date(d); mon.setDate(diff);
+        key=mon.toISOString().split("T")[0];
+      } else {
+        key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+      }
+      if(!map[key]) map[key]={pnl:0,wins:0,losses:0,total:0,key};
+      map[key].pnl+=parseFloat(t.pnl||0);
+      map[key].total++;
+      if(parseFloat(t.pnl)>0) map[key].wins++; else map[key].losses++;
+    });
+    return Object.values(map).sort((a,b)=>b.key.localeCompare(a.key));
+  }, [trades, mode]);
+  const fmtKey = key => {
+    if(mode==="week") {
+      const d=new Date(key), end=new Date(d); end.setDate(d.getDate()+6);
+      return `${d.getDate()}/${d.getMonth()+1} - ${end.getDate()}/${end.getMonth()+1}`;
+    }
+    const [y,m]=key.split("-");
+    return `${MONTHS_TH[parseInt(m)-1]} ${parseInt(y)+543}`;
+  };
+  return (
+    <div style={{ background:"#0d1117", border:"1px solid #21262d", borderRadius:10, padding:16, marginBottom:16 }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+        <div style={{ color:"#8b949e", fontSize:12, textTransform:"uppercase" }}>📅 สถิติราย{mode==="week"?"สัปดาห์":"เดือน"}</div>
+        <div style={{ display:"flex", gap:6 }}>
+          {["week","month"].map(m=>(
+            <button key={m} onClick={()=>setMode(m)} style={{ background:mode===m?"#21262d":"none", border:`1px solid ${mode===m?"#f78166":"#30363d"}`, borderRadius:16, color:mode===m?"#f78166":"#8b949e", padding:"3px 10px", fontSize:11, cursor:"pointer" }}>
+              {m==="week"?"สัปดาห์":"เดือน"}
+            </button>
+          ))}
+        </div>
+      </div>
+      {grouped.length===0 ? <div style={{ color:"#8b949e", textAlign:"center", padding:"20px 0" }}>ยังไม่มีข้อมูล</div> : grouped.map(g=>(
+        <div key={g.key} style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10, padding:"10px 12px", background:"#010409", borderRadius:8, border:"1px solid #21262d" }}>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:13, fontWeight:600, color:"#e6edf3" }}>{fmtKey(g.key)}</div>
+            <div style={{ fontSize:11, color:"#8b949e", marginTop:2 }}>{g.total} เทรด · {g.wins}W / {g.losses}L</div>
+          </div>
+          <div style={{ textAlign:"right" }}>
+            <div style={{ fontWeight:700, fontSize:15, color:g.pnl>=0?"#3fb950":"#f85149" }}>{g.pnl>=0?"+":""}{g.pnl.toFixed(2)}$</div>
+            <div style={{ fontSize:11, color:g.wins/g.total>=0.5?"#3fb950":"#f85149" }}>{Math.round((g.wins/g.total)*100)}%</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AuthScreen({ onAuthed }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
@@ -59,7 +225,6 @@ function AuthScreen({ onAuthed }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
-
   const INPUT = { background:"#0d1117", border:"1px solid #30363d", borderRadius:8, color:"#e6edf3", padding:"12px 14px", fontSize:14, width:"100%", outline:"none", marginBottom:12 };
 
   const handleSubmit = async () => {
@@ -89,20 +254,15 @@ function AuthScreen({ onAuthed }) {
           <div style={{ fontWeight:700, fontSize:20 }}>Forex Journal</div>
           <div style={{ color:"#8b949e", fontSize:13, marginTop:4 }}>{mode==="login"?"เข้าสู่ระบบเพื่อใช้งาน":"สร้างบัญชีใหม่"}</div>
         </div>
-
         <div style={{ color:"#8b949e", fontSize:12, marginBottom:6 }}>อีเมล</div>
         <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" style={INPUT}/>
-
         <div style={{ color:"#8b949e", fontSize:12, marginBottom:6 }}>รหัสผ่าน</div>
         <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="อย่างน้อย 6 ตัวอักษร" style={INPUT}/>
-
         {error && <div style={{ background:"#2d1016", border:"1px solid #f85149", color:"#f85149", borderRadius:8, padding:"8px 12px", fontSize:12, marginBottom:12 }}>{error}</div>}
         {msg && <div style={{ background:"#0d2a1e", border:"1px solid #3fb950", color:"#3fb950", borderRadius:8, padding:"8px 12px", fontSize:12, marginBottom:12 }}>{msg}</div>}
-
         <button onClick={handleSubmit} disabled={loading||!email||!password} style={{ width:"100%", background:loading?"#21262d":"#238636", border:"none", borderRadius:8, color:"#fff", padding:"12px 0", fontSize:14, fontWeight:600, cursor:loading?"default":"pointer", marginTop:4 }}>
           {loading?"กำลังโหลด...":mode==="login"?"เข้าสู่ระบบ":"สมัครสมาชิก"}
         </button>
-
         <div style={{ textAlign:"center", marginTop:18, fontSize:13 }}>
           <span style={{ color:"#8b949e" }}>{mode==="login"?"ยังไม่มีบัญชี? ":"มีบัญชีแล้ว? "}</span>
           <span onClick={()=>{setMode(mode==="login"?"signup":"login");setError("");setMsg("");}} style={{ color:"#f78166", cursor:"pointer", fontWeight:600 }}>
@@ -114,7 +274,6 @@ function AuthScreen({ onAuthed }) {
   );
 }
 
-// ===== แอปหลัก =====
 function MainApp({ session, onLogout }) {
   const [trades, setTrades] = useState([]);
   const [loadingTrades, setLoadingTrades] = useState(true);
@@ -124,11 +283,12 @@ function MainApp({ session, onLogout }) {
   const [filterPair, setFilterPair] = useState("ทั้งหมด");
   const [tab, setTab] = useState("journal");
   const [toast, setToast] = useState("");
+  const [lightboxImg, setLightboxImg] = useState(null);
+  const imageRef = useRef();
 
   const userId = session.user.id;
   const showToast = msg => { setToast(msg); setTimeout(()=>setToast(""),3000); };
 
-  // โหลดข้อมูลจาก Supabase
   const loadTrades = async () => {
     setLoadingTrades(true);
     const { data, error } = await supabase.from("trades").select("*").eq("user_id", userId).order("date", {ascending:false});
@@ -141,7 +301,7 @@ function MainApp({ session, onLogout }) {
   const filtered = useMemo(()=>filterPair==="ทั้งหมด"?trades:trades.filter(t=>t.pair===filterPair),[trades,filterPair]);
 
   const stats = useMemo(()=>{
-    const closed=filtered.filter(t=>t.pnl!=="" && t.pnl!=null);
+    const closed=filtered.filter(t=>t.pnl!=null&&t.pnl!=="");
     const wins=closed.filter(t=>parseFloat(t.pnl)>0);
     const losses=closed.filter(t=>parseFloat(t.pnl)<0);
     const totalPnl=closed.reduce((s,t)=>s+parseFloat(t.pnl||0),0);
@@ -154,6 +314,13 @@ function MainApp({ session, onLogout }) {
   },[filtered]);
 
   const handleChange = e=>setForm(f=>({...f,[e.target.name]:e.target.value}));
+
+  const handleImageUpload = e => {
+    const file=e.target.files[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=ev=>setForm(f=>({...f,image:ev.target.result}));
+    reader.readAsDataURL(file);
+  };
 
   const handleSubmit = async () => {
     if(!form.date||!form.pair) return;
@@ -169,7 +336,7 @@ function MainApp({ session, onLogout }) {
     setForm(initialForm); setShowForm(false);
   };
 
-  const handleEdit = trade=>{ setForm({...trade, pnl: trade.pnl ?? ""}); setEditId(trade.id); setShowForm(true); setTab("journal"); };
+  const handleEdit = trade=>{ setForm({...trade, pnl: trade.pnl ?? "", image: trade.image||""}); setEditId(trade.id); setShowForm(true); setTab("journal"); };
   const handleDelete = async id=>{
     if(confirm("ลบเทรดนี้?")){
       const { error } = await supabase.from("trades").delete().eq("id", id);
@@ -188,6 +355,12 @@ function MainApp({ session, onLogout }) {
   return (
     <div style={{ minHeight:"100vh", background:"#010409", color:"#e6edf3", fontFamily:"'Inter',system-ui,sans-serif", paddingBottom:60 }}>
       {toast&&<div style={{ position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#238636",color:"#fff",padding:"10px 20px",borderRadius:8,fontSize:13,fontWeight:600,zIndex:99 }}>{toast}</div>}
+
+      {lightboxImg&&(
+        <div onClick={()=>setLightboxImg(null)} style={{ position:"fixed",inset:0,background:"#000c",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center" }}>
+          <img src={lightboxImg} style={{ maxWidth:"95vw",maxHeight:"90vh",borderRadius:8 }}/>
+        </div>
+      )}
 
       <div style={{ borderBottom:"1px solid #21262d",padding:"18px 24px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,background:"#010409",zIndex:10 }}>
         <div>
@@ -230,30 +403,45 @@ function MainApp({ session, onLogout }) {
             <div style={{ color:"#8b949e",fontSize:11,marginBottom:4 }}>โน้ต</div>
             <textarea name="note" value={form.note} onChange={handleChange} placeholder="ความคิดเห็น, เหตุผล, บทเรียน..." style={{ ...INPUT,height:60,resize:"vertical" }}/>
           </div>
+          <div style={{ marginTop:10 }}>
+            <div style={{ color:"#8b949e",fontSize:11,marginBottom:6 }}>📸 แนบรูปกราฟ</div>
+            <input ref={imageRef} type="file" accept="image/*" onChange={handleImageUpload} style={{ display:"none" }}/>
+            <button onClick={()=>imageRef.current.click()} style={{ ...BTN,background:"#21262d",color:"#8b949e" }}>เลือกรูป</button>
+            {form.image&&(
+              <div style={{ marginTop:8,position:"relative",display:"inline-block" }}>
+                <img src={form.image} style={{ height:80,borderRadius:6,border:"1px solid #30363d",cursor:"pointer" }} onClick={()=>setLightboxImg(form.image)}/>
+                <button onClick={()=>setForm(f=>({...f,image:""}))} style={{ position:"absolute",top:-6,right:-6,background:"#f85149",border:"none",borderRadius:"50%",width:20,height:20,color:"#fff",cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center" }}>✕</button>
+              </div>
+            )}
+          </div>
           <button onClick={handleSubmit} style={{ marginTop:12,background:"#238636",border:"none",borderRadius:8,color:"#fff",padding:"10px 24px",fontSize:13,fontWeight:600,cursor:"pointer" }}>
             {editId?"บันทึกการแก้ไข":"เพิ่มเทรด"}
           </button>
         </div>
       )}
 
-      <div style={{ display:"flex",borderBottom:"1px solid #21262d",padding:"0 24px" }}>
-        {["journal","stats"].map(t=>(
-          <button key={t} onClick={()=>setTab(t)} style={{ background:"none",border:"none",padding:"14px 16px 12px",color:tab===t?"#e6edf3":"#8b949e",borderBottom:tab===t?"2px solid #f78166":"2px solid transparent",fontWeight:tab===t?600:400,cursor:"pointer",fontSize:14 }}>
-            {t==="journal"?"📋 Journal":"📊 สถิติ"}
+      <div style={{ display:"flex",borderBottom:"1px solid #21262d",padding:"0 24px",overflowX:"auto" }}>
+        {["journal","calendar","stats","period"].map(t=>(
+          <button key={t} onClick={()=>setTab(t)} style={{ background:"none",border:"none",padding:"14px 14px 12px",color:tab===t?"#e6edf3":"#8b949e",borderBottom:tab===t?"2px solid #f78166":"2px solid transparent",fontWeight:tab===t?600:400,cursor:"pointer",fontSize:13,whiteSpace:"nowrap" }}>
+            {t==="journal"?"📋 Journal":t==="calendar"?"📅 ปฏิทิน":t==="stats"?"📊 สถิติ":"📈 รายงาน"}
           </button>
         ))}
       </div>
 
       <div style={{ padding:"20px 24px" }}>
-        <div style={{ display:"flex",gap:8,marginBottom:16,flexWrap:"wrap" }}>
-          {usedPairs.map(p=>(
-            <button key={p} onClick={()=>setFilterPair(p)} style={{ background:filterPair===p?"#21262d":"none",border:`1px solid ${filterPair===p?"#f78166":"#30363d"}`,borderRadius:20,color:filterPair===p?"#f78166":"#8b949e",padding:"4px 12px",fontSize:12,cursor:"pointer" }}>{p}</button>
-          ))}
-        </div>
+        {tab!=="calendar"&&(
+          <div style={{ display:"flex",gap:8,marginBottom:16,flexWrap:"wrap" }}>
+            {usedPairs.map(p=>(
+              <button key={p} onClick={()=>setFilterPair(p)} style={{ background:filterPair===p?"#21262d":"none",border:`1px solid ${filterPair===p?"#f78166":"#30363d"}`,borderRadius:20,color:filterPair===p?"#f78166":"#8b949e",padding:"4px 12px",fontSize:12,cursor:"pointer" }}>{p}</button>
+            ))}
+          </div>
+        )}
 
         {loadingTrades ? (
           <div style={{ textAlign:"center", color:"#8b949e", padding:"60px 0" }}>กำลังโหลดข้อมูล...</div>
-        ) : tab==="journal"&&(
+        ) : (
+        <>
+        {tab==="journal"&&(
           filtered.length===0
             ?<div style={{ textAlign:"center",color:"#8b949e",padding:"60px 0" }}><div style={{ fontSize:40,marginBottom:12 }}>📒</div><div style={{ fontSize:16 }}>ยังไม่มีเทรด</div><div style={{ fontSize:13,marginTop:6 }}>กด "+ บันทึก" เพื่อเริ่มต้น</div></div>
             :<div style={{ display:"flex",flexDirection:"column",gap:8 }}>
@@ -273,6 +461,7 @@ function MainApp({ session, onLogout }) {
                     {t.lots&&<span style={{ marginLeft:10 }}>Lots: <b style={{ color:"#e6edf3" }}>{t.lots}</b></span>}
                   </div>
                   {t.pnl!=null&&t.pnl!==""&&<div style={{ fontWeight:700,fontSize:16,color:pnlColor(t.pnl) }}>{parseFloat(t.pnl)>0?"+":""}{parseFloat(t.pnl).toFixed(2)}$</div>}
+                  {t.image&&<img src={t.image} onClick={()=>setLightboxImg(t.image)} style={{ width:"100%",maxHeight:160,objectFit:"cover",borderRadius:8,cursor:"pointer",border:"1px solid #30363d" }}/>}
                   {t.note&&<div style={{ width:"100%",fontSize:12,color:"#8b949e",borderTop:"1px solid #21262d",paddingTop:8 }}>💬 {t.note}</div>}
                   <div style={{ display:"flex",gap:6 }}>
                     <button onClick={()=>handleEdit(t)} style={{ background:"#21262d",border:"none",borderRadius:6,color:"#8b949e",padding:"4px 10px",fontSize:12,cursor:"pointer" }}>✏️ แก้ไข</button>
@@ -283,7 +472,9 @@ function MainApp({ session, onLogout }) {
             </div>
         )}
 
-        {!loadingTrades && tab==="stats"&&(
+        {tab==="calendar"&&<CalendarView trades={trades}/>}
+
+        {tab==="stats"&&(
           <div>
             <div style={{ display:"flex",flexWrap:"wrap",gap:10,marginBottom:20 }}>
               <StatCard label="รวมเทรด" value={stats.total}/>
@@ -302,6 +493,7 @@ function MainApp({ session, onLogout }) {
                 </svg>
               </div>
             )}
+            <SessionStats trades={filtered}/>
             <div style={{ background:"#0d1117",border:"1px solid #21262d",borderRadius:10,padding:16 }}>
               <div style={{ color:"#8b949e",fontSize:12,marginBottom:12,textTransform:"uppercase" }}>P&L by คู่เงิน</div>
               {Array.from(new Set(filtered.map(t=>t.pair))).map(pair=>{
@@ -322,6 +514,10 @@ function MainApp({ session, onLogout }) {
               {trades.length===0&&<div style={{ color:"#8b949e",textAlign:"center",padding:"20px 0" }}>เพิ่มเทรดก่อนเพื่อดูสถิติ</div>}
             </div>
           </div>
+        )}
+
+        {tab==="period"&&<PeriodStats trades={filtered}/>}
+        </>
         )}
       </div>
     </div>
