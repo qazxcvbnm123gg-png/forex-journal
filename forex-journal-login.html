@@ -234,12 +234,16 @@ function AuthScreen({ onAuthed }) {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if(error) throw error;
         onAuthed(data.session);
-      } else {
+      } else if(mode==="signup") {
         const { data, error } = await supabase.auth.signUp({ email, password });
         if(error) throw error;
         if(data.session) onAuthed(data.session);
         else setMsg("✅ สมัครสำเร็จ! กรุณาเข้าสู่ระบบ");
         setMode("login");
+      } else if(mode==="reset") {
+        const { error } = await supabase.auth.resetPasswordForEmail(email);
+        if(error) throw error;
+        setMsg("✅ ส่งลิงก์รีเซ็ตรหัสผ่านไปที่อีเมลแล้ว กรุณาเช็คอีเมล (รวมถึงโฟลเดอร์ Spam)");
       }
     } catch(err) {
       setError(err.message.includes("Invalid login") ? "อีเมลหรือรหัสผ่านไม่ถูกต้อง" : err.message.includes("already registered") ? "อีเมลนี้ถูกใช้แล้ว" : err.message);
@@ -252,23 +256,44 @@ function AuthScreen({ onAuthed }) {
         <div style={{ textAlign:"center", marginBottom:24 }}>
           <div style={{ fontSize:32, marginBottom:8 }}>📈</div>
           <div style={{ fontWeight:700, fontSize:20 }}>Forex Journal</div>
-          <div style={{ color:"#8b949e", fontSize:13, marginTop:4 }}>{mode==="login"?"เข้าสู่ระบบเพื่อใช้งาน":"สร้างบัญชีใหม่"}</div>
+          <div style={{ color:"#8b949e", fontSize:13, marginTop:4 }}>
+            {mode==="login"?"เข้าสู่ระบบเพื่อใช้งาน":mode==="signup"?"สร้างบัญชีใหม่":"กู้คืนรหัสผ่าน"}
+          </div>
         </div>
         <div style={{ color:"#8b949e", fontSize:12, marginBottom:6 }}>อีเมล</div>
         <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" style={INPUT}/>
-        <div style={{ color:"#8b949e", fontSize:12, marginBottom:6 }}>รหัสผ่าน</div>
-        <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="อย่างน้อย 6 ตัวอักษร" style={INPUT}/>
+        {mode!=="reset" && (
+          <>
+            <div style={{ color:"#8b949e", fontSize:12, marginBottom:6 }}>รหัสผ่าน</div>
+            <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="อย่างน้อย 6 ตัวอักษร" style={INPUT}/>
+          </>
+        )}
+        {mode==="login" && (
+          <div style={{ textAlign:"right", marginBottom:12, marginTop:-6 }}>
+            <span onClick={()=>{setMode("reset");setError("");setMsg("");}} style={{ color:"#8b949e", fontSize:12, cursor:"pointer", textDecoration:"underline" }}>
+              ลืมรหัสผ่าน?
+            </span>
+          </div>
+        )}
         {error && <div style={{ background:"#2d1016", border:"1px solid #f85149", color:"#f85149", borderRadius:8, padding:"8px 12px", fontSize:12, marginBottom:12 }}>{error}</div>}
         {msg && <div style={{ background:"#0d2a1e", border:"1px solid #3fb950", color:"#3fb950", borderRadius:8, padding:"8px 12px", fontSize:12, marginBottom:12 }}>{msg}</div>}
-        <button onClick={handleSubmit} disabled={loading||!email||!password} style={{ width:"100%", background:loading?"#21262d":"#238636", border:"none", borderRadius:8, color:"#fff", padding:"12px 0", fontSize:14, fontWeight:600, cursor:loading?"default":"pointer", marginTop:4 }}>
-          {loading?"กำลังโหลด...":mode==="login"?"เข้าสู่ระบบ":"สมัครสมาชิก"}
+        <button onClick={handleSubmit} disabled={loading||!email||(mode!=="reset"&&!password)} style={{ width:"100%", background:loading?"#21262d":"#238636", border:"none", borderRadius:8, color:"#fff", padding:"12px 0", fontSize:14, fontWeight:600, cursor:loading?"default":"pointer", marginTop:4 }}>
+          {loading?"กำลังโหลด...":mode==="login"?"เข้าสู่ระบบ":mode==="signup"?"สมัครสมาชิก":"ส่งลิงก์รีเซ็ตรหัสผ่าน"}
         </button>
-        <div style={{ textAlign:"center", marginTop:18, fontSize:13 }}>
-          <span style={{ color:"#8b949e" }}>{mode==="login"?"ยังไม่มีบัญชี? ":"มีบัญชีแล้ว? "}</span>
-          <span onClick={()=>{setMode(mode==="login"?"signup":"login");setError("");setMsg("");}} style={{ color:"#f78166", cursor:"pointer", fontWeight:600 }}>
-            {mode==="login"?"สมัครสมาชิก":"เข้าสู่ระบบ"}
-          </span>
-        </div>
+        {mode==="reset" ? (
+          <div style={{ textAlign:"center", marginTop:18, fontSize:13 }}>
+            <span onClick={()=>{setMode("login");setError("");setMsg("");}} style={{ color:"#f78166", cursor:"pointer", fontWeight:600 }}>
+              ← กลับไปเข้าสู่ระบบ
+            </span>
+          </div>
+        ) : (
+          <div style={{ textAlign:"center", marginTop:18, fontSize:13 }}>
+            <span style={{ color:"#8b949e" }}>{mode==="login"?"ยังไม่มีบัญชี? ":"มีบัญชีแล้ว? "}</span>
+            <span onClick={()=>{setMode(mode==="login"?"signup":"login");setError("");setMsg("");}} style={{ color:"#f78166", cursor:"pointer", fontWeight:600 }}>
+              {mode==="login"?"สมัครสมาชิก":"เข้าสู่ระบบ"}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -360,6 +385,19 @@ function MainApp({ session, onLogout }) {
       {lightboxImg&&(
         <div onClick={()=>setLightboxImg(null)} style={{ position:"fixed",inset:0,background:"#000c",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center" }}>
           <img src={lightboxImg} style={{ maxWidth:"95vw",maxHeight:"90vh",borderRadius:8 }}/>
+        </div>
+      )}
+
+      {pendingDelete!==null&&(
+        <div style={{ position:"fixed",inset:0,background:"#000c",zIndex:101,display:"flex",alignItems:"center",justifyContent:"center",padding:20 }}>
+          <div style={{ background:"#0d1117",border:"1px solid #21262d",borderRadius:12,padding:24,maxWidth:320,width:"100%",textAlign:"center" }}>
+            <div style={{ fontSize:32,marginBottom:10 }}>🗑</div>
+            <div style={{ fontSize:15,fontWeight:600,marginBottom:18 }}>ลบเทรดนี้?</div>
+            <div style={{ display:"flex",gap:10,justifyContent:"center" }}>
+              <button onClick={()=>setPendingDelete(null)} style={{ background:"#21262d",border:"none",borderRadius:8,color:"#e6edf3",padding:"9px 20px",fontSize:13,fontWeight:600,cursor:"pointer" }}>ยกเลิก</button>
+              <button onClick={confirmDelete} style={{ background:"#da3633",border:"none",borderRadius:8,color:"#fff",padding:"9px 20px",fontSize:13,fontWeight:600,cursor:"pointer" }}>ลบ</button>
+            </div>
+          </div>
         </div>
       )}
 
