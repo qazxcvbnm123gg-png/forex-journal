@@ -158,7 +158,116 @@ function SessionStats({ trades }) {
   );
 }
 
-function PeriodStats({ trades }) {
+function MonthlyGoals({ trades }) {
+  const today = new Date();
+  const currentKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`;
+  const [goals, setGoals] = useState(()=>{
+    try { return JSON.parse(localStorage.getItem("monthly_goals")||"{}"); } catch { return {}; }
+  });
+  const [editing, setEditing] = useState(false);
+  const [goalPnl, setGoalPnl] = useState(goals[currentKey]?.pnl || "");
+  const [goalWr, setGoalWr] = useState(goals[currentKey]?.wr || "");
+
+  const saveGoal = () => {
+    const next = { ...goals, [currentKey]: { pnl: parseFloat(goalPnl)||0, wr: parseFloat(goalWr)||0 } };
+    setGoals(next);
+    localStorage.setItem("monthly_goals", JSON.stringify(next));
+    setEditing(false);
+  };
+
+  const monthlyData = useMemo(() => {
+    const map = {};
+    trades.forEach(t => {
+      if(!t.date||t.pnl==null||t.pnl==="") return;
+      const d = new Date(t.date);
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+      if(!map[key]) map[key]={pnl:0,wins:0,total:0,key};
+      map[key].pnl+=parseFloat(t.pnl||0);
+      map[key].total++;
+      if(parseFloat(t.pnl)>0) map[key].wins++;
+    });
+    return map;
+  }, [trades]);
+
+  const current = monthlyData[currentKey] || { pnl:0, wins:0, total:0 };
+  const currentWr = current.total>0 ? (current.wins/current.total)*100 : 0;
+  const goal = goals[currentKey] || { pnl:0, wr:0 };
+  const pnlPct = goal.pnl>0 ? Math.min((current.pnl/goal.pnl)*100, 100) : 0;
+  const wrPct = goal.wr>0 ? Math.min((currentWr/goal.wr)*100, 100) : 0;
+  const pnlHit = goal.pnl>0 && current.pnl>=goal.pnl;
+  const wrHit = goal.wr>0 && currentWr>=goal.wr;
+
+  const allMonthsSorted = Object.values(monthlyData).sort((a,b)=>b.key.localeCompare(a.key));
+  const totalAllTime = allMonthsSorted.reduce((s,m)=>s+m.pnl,0);
+  const fmtMonth = key => { const [y,m]=key.split("-"); return `${MONTHS_TH[parseInt(m)-1]} ${parseInt(y)+543}`; };
+
+  const Bar = ({ pct, hit, label, value }) => (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6, fontSize:12 }}>
+        <span style={{ color:"#8b949e" }}>{label}</span>
+        <span style={{ color: hit?"#3fb950":"#e6edf3", fontWeight:600 }}>{value}</span>
+      </div>
+      <div style={{ background:"#21262d", borderRadius:6, height:14, overflow:"hidden", position:"relative" }}>
+        <div style={{ width:`${pct}%`, background: hit?"#3fb950":"#f78166", height:"100%", borderRadius:6, transition:"width 0.3s" }}/>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ background:"#0d1117", border:"1px solid #21262d", borderRadius:10, padding:16, marginBottom:16 }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+        <div style={{ color:"#8b949e", fontSize:12, textTransform:"uppercase" }}>🎯 เป้าหมายเดือน{fmtMonth(currentKey)}</div>
+        <button onClick={()=>setEditing(e=>!e)} style={{ background:"#21262d", border:"none", borderRadius:6, color:"#8b949e", padding:"4px 10px", fontSize:11, cursor:"pointer" }}>
+          {editing?"ปิด":"⚙️ ตั้งเป้า"}
+        </button>
+      </div>
+
+      {editing && (
+        <div style={{ background:"#010409", border:"1px solid #21262d", borderRadius:8, padding:12, marginBottom:14, display:"flex", gap:10, flexWrap:"wrap" }}>
+          <div style={{ flex:1, minWidth:120 }}>
+            <div style={{ color:"#8b949e", fontSize:11, marginBottom:4 }}>เป้ากำไร ($)</div>
+            <input type="number" value={goalPnl} onChange={e=>setGoalPnl(e.target.value)} placeholder="500" style={{ background:"#0d1117", border:"1px solid #30363d", borderRadius:6, color:"#e6edf3", padding:"7px 10px", fontSize:13, width:"100%", outline:"none" }}/>
+          </div>
+          <div style={{ flex:1, minWidth:120 }}>
+            <div style={{ color:"#8b949e", fontSize:11, marginBottom:4 }}>เป้า Win Rate (%)</div>
+            <input type="number" value={goalWr} onChange={e=>setGoalWr(e.target.value)} placeholder="60" style={{ background:"#0d1117", border:"1px solid #30363d", borderRadius:6, color:"#e6edf3", padding:"7px 10px", fontSize:13, width:"100%", outline:"none" }}/>
+          </div>
+          <button onClick={saveGoal} style={{ background:"#238636", border:"none", borderRadius:6, color:"#fff", padding:"7px 16px", fontSize:12, fontWeight:600, cursor:"pointer", alignSelf:"flex-end" }}>บันทึก</button>
+        </div>
+      )}
+
+      {goal.pnl>0 || goal.wr>0 ? (
+        <>
+          {goal.pnl>0 && <Bar pct={pnlPct} hit={pnlHit} label="กำไร" value={`${current.pnl>=0?"+":""}${current.pnl.toFixed(0)}$ / ${goal.pnl}$`}/>}
+          {goal.wr>0 && <Bar pct={wrPct} hit={wrHit} label="Win Rate" value={`${currentWr.toFixed(0)}% / ${goal.wr}%`}/>}
+          {(pnlHit||wrHit) && <div style={{ textAlign:"center", color:"#3fb950", fontSize:13, fontWeight:600, marginTop:4 }}>🎉 ถึงเป้าแล้ว!</div>}
+        </>
+      ) : (
+        <div style={{ color:"#8b949e", textAlign:"center", padding:"10px 0", fontSize:13 }}>ยังไม่ได้ตั้งเป้า กด "⚙️ ตั้งเป้า" เพื่อเริ่มต้น</div>
+      )}
+
+      <div style={{ borderTop:"1px solid #21262d", marginTop:16, paddingTop:14 }}>
+        <div style={{ color:"#8b949e", fontSize:12, textTransform:"uppercase", marginBottom:10 }}>📊 สรุปกำไรแต่ละเดือน</div>
+        {allMonthsSorted.length===0 ? (
+          <div style={{ color:"#8b949e", textAlign:"center", padding:"10px 0", fontSize:13 }}>ยังไม่มีข้อมูล</div>
+        ) : (
+          <>
+            {allMonthsSorted.map(m=>(
+              <div key={m.key} style={{ display:"flex", justifyContent:"space-between", padding:"6px 0", fontSize:13 }}>
+                <span style={{ color:"#8b949e" }}>{fmtMonth(m.key)}</span>
+                <span style={{ fontWeight:600, color: m.pnl>=0?"#3fb950":"#f85149" }}>{m.pnl>=0?"+":""}{m.pnl.toFixed(2)}$</span>
+              </div>
+            ))}
+            <div style={{ display:"flex", justifyContent:"space-between", padding:"10px 0 0", marginTop:6, borderTop:"1px solid #21262d", fontSize:14 }}>
+              <span style={{ fontWeight:700 }}>รวมทั้งหมด</span>
+              <span style={{ fontWeight:700, color: totalAllTime>=0?"#3fb950":"#f85149" }}>{totalAllTime>=0?"+":""}{totalAllTime.toFixed(2)}$</span>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
   const [mode, setMode] = useState("week");
 
   const grouped = useMemo(() => {
@@ -488,6 +597,7 @@ function App() {
 
         {tab==="period"&&(
           <div>
+            <MonthlyGoals trades={trades}/>
             <PeriodStats trades={filtered}/>
           </div>
         )}
